@@ -58,7 +58,7 @@ private:
                            *lfoShape, *lfoRate, *lfoDelay, *lfoPitch, *lfoCutoff, *lfoAmp,
                            *master,
                            *osc1On, *osc2On, *subOn, *noiseOn, *filterOn, *lfoOn,
-                           *lowCut, *drive, *pumpOn, *pumpRate, *pumpShape, *pumpDepth;
+                           *lowCut, *drive, *filterA, *filterB, *filterN, *filterS, *pumpOn, *pumpRate, *pumpShape, *pumpDepth;
     } p;
 
     static constexpr int numVoices = 16;
@@ -69,7 +69,6 @@ private:
     FxChain fx { apvts };
     juce::SmoothedValue<float> masterGain;
 
-    juce::dsp::StateVariableTPTFilter<float> lowCutFilter;
 
     double currentSampleRate = 44100.0;
     double pumpBeats = 0.0;     // free-running beat position when the host isn't playing

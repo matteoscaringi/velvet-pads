@@ -50,7 +50,7 @@ void GraphBase::drawBackground (juce::Graphics& g, int verticalLines, int horizo
 {
     const auto b = getLocalBounds().toFloat();
     g.setColour (Theme::graphBg);
-    g.fillRoundedRectangle (b, 3.0f);
+    g.fillRoundedRectangle (b, 1.5f);
 
     const auto p = plot();
     g.setColour (Theme::graphGrid);
@@ -66,7 +66,7 @@ void GraphBase::drawBackground (juce::Graphics& g, int verticalLines, int horizo
     }
 
     g.setColour (Theme::edge);
-    g.drawRoundedRectangle (b.reduced (0.5f), 3.0f, 1.0f);
+    g.drawRoundedRectangle (b.reduced (0.5f), 1.5f, 1.0f);
 }
 
 void GraphBase::drawReadout (juce::Graphics& g)
@@ -115,9 +115,9 @@ EnvelopeGraph::EnvelopeGraph (juce::AudioProcessorValueTreeState& s, const juce:
       decay (s, d, [this] { repaint(); }),
       sustain (s, su, [this] { repaint(); }),
       release (s, r, [this] { repaint(); }),
-      colour (c),
       isAmp (amp)
 {
+    accent = c;
     setRepaintsOnMouseActivity (false);
 }
 
@@ -176,8 +176,8 @@ void EnvelopeGraph::paint (juce::Graphics& g)
     curve.lineTo (pts.end);
     curve.lineTo (p.getRight(), p.getBottom());
 
-    fillUnder (g, curve, p, p.getBottom(), colour);
-    g.setColour (colour);
+    fillUnder (g, curve, p, p.getBottom(), accent);
+    g.setColour (accent);
     g.strokePath (curve, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     // Note-off marker
@@ -187,7 +187,7 @@ void EnvelopeGraph::paint (juce::Graphics& g)
 
     const juce::Point<float> handles[] = { pts.peak, pts.sustain, pts.end };
     for (int i = 0; i < 3; ++i)
-        drawHandle (g, handles[i], colour, i == dragging || (dragging < 0 && i == hover));
+        drawHandle (g, handles[i], accent, i == dragging || (dragging < 0 && i == hover));
 
     // Playhead: x follows the stage timing, y is the envelope's real level
     if (monitor != nullptr && monitor->active.load())
@@ -206,7 +206,7 @@ void EnvelopeGraph::paint (juce::Graphics& g)
         else
             x = pts.sustain.x;
 
-        drawPlayhead (g, { x, p.getBottom() - level * p.getHeight() }, colour);
+        drawPlayhead (g, { x, p.getBottom() - level * p.getHeight() }, accent);
     }
 
     drawReadout (g);
@@ -345,12 +345,12 @@ void FilterGraph::paint (juce::Graphics& g)
         else        curve.lineTo (x, y);
     }
 
-    fillUnder (g, curve, p, p.getBottom(), Theme::accent);
-    g.setColour (Theme::accent);
+    fillUnder (g, curve, p, p.getBottom(), accent);
+    g.setColour (accent);
     g.strokePath (curve, juce::PathStrokeType (2.0f));
 
     const float fc = cutoff.get();
-    drawHandle (g, { freqToX (fc), dbToY (magnitudeDb (fc)) }, Theme::accent, isMouseButtonDown());
+    drawHandle (g, { freqToX (fc), dbToY (magnitudeDb (fc)) }, accent, isMouseButtonDown());
     drawReadout (g);
 }
 
@@ -400,6 +400,7 @@ OscGraph::OscGraph (juce::AudioProcessorValueTreeState& s, const juce::String& p
       detune (s, prefix + "Detune", [this] { repaint(); }),
       level (s, prefix + "Level", [this] { repaint(); })
 {
+    accent = Theme::wave;
     setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
 }
 
@@ -434,13 +435,13 @@ void OscGraph::paint (juce::Graphics& g)
         const float spread = n == 1 ? 0.0f : 2.0f * (float) u / (float) (n - 1) - 1.0f;
         if (std::abs (spread) < 0.001f)
             continue;
-        g.setColour (Theme::wave.withAlpha (0.22f));
+        g.setColour (accent.withAlpha (0.22f));
         g.strokePath (makePath (spread * detune.get() * 0.18f), juce::PathStrokeType (1.2f));
     }
 
     const auto main = makePath (0.0f);
-    fillUnder (g, main, p, mid, Theme::wave.withAlpha (0.6f));
-    g.setColour (Theme::wave);
+    fillUnder (g, main, p, mid, accent.withAlpha (0.6f));
+    g.setColour (accent);
     g.strokePath (main, juce::PathStrokeType (2.0f));
 
     g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
@@ -483,6 +484,7 @@ LfoGraph::LfoGraph (juce::AudioProcessorValueTreeState& s)
       rate (s, "lfoRate", [this] { repaint(); }),
       delay (s, "lfoDelay", [this] { repaint(); })
 {
+    accent = Theme::lfo;
 }
 
 juce::Point<float> LfoGraph::delayHandle() const
@@ -532,8 +534,8 @@ void LfoGraph::paint (juce::Graphics& g)
         }
     }
 
-    fillUnder (g, curve, p, mid, Theme::lfo);
-    g.setColour (Theme::lfo.withAlpha (0.35f));
+    fillUnder (g, curve, p, mid, accent);
+    g.setColour (accent.withAlpha (0.35f));
     const float dashes[] = { 3.0f, 3.0f };
     juce::PathStrokeType dashStroke (1.0f);
     juce::Path dashed;
@@ -542,10 +544,10 @@ void LfoGraph::paint (juce::Graphics& g)
     dashStroke.createDashedStroke (dashed, fadeBottom, dashes, 2);
     g.fillPath (dashed);
 
-    g.setColour (Theme::lfo);
+    g.setColour (accent);
     g.strokePath (curve, juce::PathStrokeType (1.8f));
 
-    drawHandle (g, delayHandle(), Theme::lfo, hoverHandle || draggingDelay);
+    drawHandle (g, delayHandle(), accent, hoverHandle || draggingDelay);
 
     // Playhead: wrap time back into the drawn window once the fade-in is over,
     // since the curve is periodic from there on
@@ -562,7 +564,7 @@ void LfoGraph::paint (juce::Graphics& g)
                                                     : windowSeconds;
         }
         const float x = p.getX() + t / windowSeconds * p.getWidth();
-        drawPlayhead (g, { x, mid - monitor->lfoValue.load() * amp }, Theme::lfo);
+        drawPlayhead (g, { x, mid - monitor->lfoValue.load() * amp }, accent);
     }
     drawReadout (g);
 }
@@ -649,7 +651,7 @@ void DistGraph::paint (juce::Graphics& g)
         if (i == 0) curve.startNewSubPath (x, y);
         else        curve.lineTo (x, y);
     }
-    g.setColour (Theme::accent);
+    g.setColour (accent);
     g.strokePath (curve, juce::PathStrokeType (2.0f));
     drawReadout (g);
 }
@@ -746,12 +748,12 @@ void EqGraph::paint (juce::Graphics& g)
     fill.lineTo (p.getRight(), dbToY (0.0f));
     fill.lineTo (p.getX(), dbToY (0.0f));
     fill.closeSubPath();
-    g.setColour (Theme::accent.withAlpha (0.18f));
+    g.setColour (accent.withAlpha (0.18f));
     g.fillPath (fill);
-    g.setColour (Theme::accent);
+    g.setColour (accent);
     g.strokePath (curve, juce::PathStrokeType (2.0f));
 
-    drawHandle (g, { freqToX (midFreq.get()), dbToY (mid.get()) }, Theme::accent, isMouseButtonDown());
+    drawHandle (g, { freqToX (midFreq.get()), dbToY (mid.get()) }, accent, isMouseButtonDown());
     drawReadout (g);
 }
 

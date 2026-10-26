@@ -62,6 +62,7 @@ class Selector : public juce::Component
 {
 public:
     Selector (APVTS&, const juce::String& paramId);
+    void setAccent (juce::Colour c) { box.setColour (juce::ComboBox::textColourId, c); }
     void resized() override;
 
 private:
@@ -80,7 +81,11 @@ public:
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;
 
+    // Colours the section: stripe, power square, knobs, value boxes, selectors, tabs and graphs
+    void setAccent (juce::Colour);
+
 protected:
+    juce::Colour accent = Theme::accent;
     static constexpr int headerHeight = 24;
     juce::Rectangle<int> header() const  { return getLocalBounds().removeFromTop (headerHeight); }
     juce::Rectangle<int> content() const { return getLocalBounds().withTrimmedTop (headerHeight).reduced (8, 6); }
@@ -138,6 +143,10 @@ private:
     Selector type;
     FilterGraph graph;
     Knob cutoff, reso, drive, envAmount, keyTrack, lowCut;
+
+    // Routing: which sources go through the filter (A, B, Noise, Sub)
+    juce::ToggleButton routeA { "A" }, routeB { "B" }, routeN { "N" }, routeS { "S" };
+    std::unique_ptr<APVTS::ButtonAttachment> routeAttachments[4];
 };
 
 class EnvPanel : public Panel
@@ -181,31 +190,82 @@ private:
     Knob depth;
 };
 
-// One effect in the FX rack: optional graph on the left, selectors on top, knob row below.
-class FxModule : public Panel
+// One effect strip in the FX rack: title tag + selectors on the left, optional graph,
+// knob row, power button on the right.
+class RackStrip : public juce::Component
 {
 public:
-    FxModule (APVTS&, const juce::String& title, const juce::String& powerId,
-              std::initializer_list<std::pair<const char*, const char*>> knobs,
-              std::initializer_list<const char*> selectorIds = {},
-              std::unique_ptr<juce::Component> graph = nullptr);
+    RackStrip (APVTS&, const juce::String& title, juce::Colour, const juce::String& powerId,
+               std::initializer_list<std::pair<const char*, const char*>> knobs,
+               std::initializer_list<const char*> selectorIds = {},
+               std::unique_ptr<juce::Component> graph = nullptr);
+
+    int preferredHeight() const { return graph != nullptr ? 150 : 96; }
+    void setSelected (bool);
+    std::function<void()> onSelect;
+
+    void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override { if (onSelect) onSelect(); }
+
+    const juce::String title;
+    const juce::Colour colour;
 
 private:
     juce::OwnedArray<Knob> knobs;
     juce::OwnedArray<Selector> selectors;
     std::unique_ptr<juce::Component> graph;
+    juce::ToggleButton power;
+    std::unique_ptr<APVTS::ButtonAttachment> powerAttachment;
+    bool selected = false;
 };
 
-// The FX tab: the whole effects rack, laid out in signal-flow order.
+// One row in the module list: LED switch + name. Clicking the name selects (and enables) it.
+class RackListItem : public juce::Component
+{
+public:
+    RackListItem (APVTS&, const juce::String& name, juce::Colour, const juce::String& powerId);
+
+    bool isOn() const { return led.getToggleState(); }
+    void setSelected (bool);
+    std::function<void()> onSelect, onPowerChanged;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+
+private:
+    juce::String name;
+    juce::Colour colour;
+    juce::ToggleButton led;
+    std::unique_ptr<APVTS::ButtonAttachment> attachment;
+    bool selected = false;
+};
+
+// The FX tab: module list on the left, rack of enabled modules on the right (signal-flow order).
 class FxPage : public juce::Component
 {
 public:
     explicit FxPage (APVTS&);
+    void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
-    FxModule distortion, phaser, chorus, delay, compressor, reverb, eq;
+    void select (int index);
+    void layoutRack();
+
+    struct RackContent : public juce::Component
+    {
+        bool empty = true;
+        void paint (juce::Graphics&) override;
+    };
+
+    juce::OwnedArray<RackStrip> strips;
+    juce::OwnedArray<RackListItem> items;
+    RackContent rack;
+    juce::Viewport viewport;
+    juce::Rectangle<int> listArea, rackArea;
+    int selectedIndex = 0;
 };
 
 //==============================================================================

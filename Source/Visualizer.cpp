@@ -155,7 +155,7 @@ void VisPage::paintGoniometer (juce::Graphics& g)
     const auto p = gonioPlot;
 
     g.setColour (Theme::graphBg);
-    g.fillRoundedRectangle (p, 3.0f);
+    g.fillRoundedRectangle (p, 1.5f);
 
     g.drawImage (trails, p);
 
@@ -176,7 +176,7 @@ void VisPage::paintGoniometer (juce::Graphics& g)
     g.drawText ("-S", juce::Rectangle<float> (p.getRight() - 28.0f, p.getCentreY() - 20.0f, 24.0f, 16.0f), juce::Justification::centred);
 
     g.setColour (Theme::edge);
-    g.drawRoundedRectangle (p, 3.0f, 1.0f);
+    g.drawRoundedRectangle (p, 1.5f, 1.0f);
 }
 
 void VisPage::paintMeters (juce::Graphics& g)
@@ -222,7 +222,7 @@ void VisPage::paintMeters (juce::Graphics& g)
     grad.addColour (0.5, juce::Colour (0xffd9b24a));
     g.setGradientFill (grad);
     g.setOpacity (0.35f);
-    g.fillRoundedRectangle (bar, 3.0f);
+    g.fillRoundedRectangle (bar, 1.5f);
     g.setOpacity (1.0f);
     const float cx = bar.getX() + (correlation * 0.5f + 0.5f) * bar.getWidth();
     g.setColour (Theme::text);

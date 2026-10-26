@@ -31,7 +31,9 @@ VelvetPadProcessor::VelvetPadProcessor()
     p.osc1On = get ("osc1On");        p.osc2On = get ("osc2On");
     p.subOn = get ("subOn");          p.noiseOn = get ("noiseOn");
     p.filterOn = get ("filterOn");    p.lfoOn = get ("lfoOn");
-    p.lowCut = get ("lowCut");        p.drive = get ("drive");        p.pumpOn = get ("pumpOn");    p.pumpRate = get ("pumpRate");
+    p.lowCut = get ("lowCut");        p.drive = get ("drive");
+    p.filterA = get ("filterA");      p.filterB = get ("filterB");
+    p.filterN = get ("filterN");      p.filterS = get ("filterS");        p.pumpOn = get ("pumpOn");    p.pumpRate = get ("pumpRate");
     p.pumpShape = get ("pumpShape");  p.pumpDepth = get ("pumpDepth");
 }
 
@@ -43,11 +45,7 @@ void VelvetPadProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         if (auto* v = dynamic_cast<StringVoice*> (synth.getVoice (i)))
             v->prepare (sampleRate);
 
-    const juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) samplesPerBlock, 2 };
     fx.prepare (sampleRate, samplesPerBlock);
-    lowCutFilter.prepare (spec);
-    lowCutFilter.setType (juce::dsp::StateVariableTPTFilterType::highpass);
-    lowCutFilter.setResonance (0.7071f);
 
     masterGain.reset (sampleRate, 0.05);
     masterGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (p.master->load()));
@@ -86,6 +84,7 @@ void VelvetPadProcessor::updateSettings()
     settings.envAmount  = p.filterEnv->load();
     settings.keyTrack   = p.keyTrack->load();
     settings.drive      = p.drive->load();
+    settings.lowCut     = p.lowCut->load();
 
     settings.filterEnv = { p.fAttack->load(), p.fDecay->load(), p.fSustain->load(), p.fRelease->load() };
     settings.ampEnv    = { p.aAttack->load(), p.aDecay->load(), p.aSustain->load(), p.aRelease->load() };
@@ -104,6 +103,11 @@ void VelvetPadProcessor::updateSettings()
     settings.noiseOn  = p.noiseOn->load() > 0.5f;
     settings.filterOn = p.filterOn->load() > 0.5f;
     settings.lfoOn    = p.lfoOn->load() > 0.5f;
+
+    settings.filterOsc[0] = p.filterA->load() > 0.5f;
+    settings.filterOsc[1] = p.filterB->load() > 0.5f;
+    settings.filterNoise  = p.filterN->load() > 0.5f;
+    settings.filterSub    = p.filterS->load() > 0.5f;
 }
 
 void VelvetPadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -115,12 +119,6 @@ void VelvetPadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     updateSettings();
     synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
 
-    if (settings.filterOn)
-    {
-        juce::dsp::AudioBlock<float> block (buffer);
-        lowCutFilter.setCutoffFrequency (p.lowCut->load());
-        lowCutFilter.process (juce::dsp::ProcessContextReplacing<float> (block));
-    }
 
     double bpm = 126.0;
     if (auto* ph = getPlayHead())

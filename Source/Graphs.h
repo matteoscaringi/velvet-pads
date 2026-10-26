@@ -44,7 +44,10 @@ public:
         if (m != nullptr) startTimerHz (30);
     }
 
+    void setAccent (juce::Colour c) { accent = c; repaint(); }
+
 protected:
+    juce::Colour accent = juce::Colour (0xff3ea6ff);
     void drawPlayhead (juce::Graphics&, juce::Point<float>, juce::Colour);
     const VoiceMonitor* monitor = nullptr;
     juce::Rectangle<float> plot() const { return getLocalBounds().toFloat().reduced (8.0f, 10.0f); }
@@ -89,7 +92,6 @@ private:
     void updateReadout();
 
     ParamRef attack, decay, sustain, release;
-    juce::Colour colour;
     bool isAmp;
     int hover = -1, dragging = -1;
 };

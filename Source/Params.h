@@ -39,12 +39,15 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 
     const StringArray waves { "Saw", "Square", "Triangle", "Sine" };
 
-    // Section power switches (the squares in each panel header). Sub is off by default:
-    // tech house pads leave the low end to the kick and bass.
+    // Section power switches (the squares in each panel header). Sub, noise, LFO and pump
+    // start off so a new instance is a clean two-oscillator patch.
     for (auto [id, name, on] : { std::tuple { "osc1On", "Osc 1 On", true }, { "osc2On", "Osc 2 On", true },
-                                 { "subOn", "Sub On", false }, { "noiseOn", "Noise On", true },
-                                 { "filterOn", "Filter On", true }, { "lfoOn", "LFO On", true },
-                                 { "pumpOn", "Pump On", true },
+                                 { "subOn", "Sub On", false }, { "noiseOn", "Noise On", false },
+                                 { "filterOn", "Filter On", true }, { "lfoOn", "LFO On", false },
+                                 { "pumpOn", "Pump On", false },
+                                 // Filter routing: which sources go through the filter (the rest bypass it)
+                                 { "filterA", "Filter Osc A", true }, { "filterB", "Filter Osc B", true },
+                                 { "filterN", "Filter Noise", true }, { "filterS", "Filter Sub", false },
                                  // FX rack: chorus + reverb on (part of the pad sound), the rest ready to switch on
                                  { "distOn", "Distortion On", false }, { "phaserOn", "Phaser On", false },
                                  { "chorusOn", "Chorus On", true }, { "delayOn", "Delay On", false },
@@ -52,19 +55,19 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                  { "eqOn", "EQ On", false } })
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { id, 1 }, name, on));
 
-    // Oscillators: osc1 is a wide 7-voice supersaw, osc2 a thinner supersaw an octave up for air
+    // Oscillators: both start in tune at the played pitch, single voice, unison controls at 50%
     for (int i = 1; i <= 2; ++i)
     {
         const String p = "osc" + String (i);
         const String n = "Osc " + String (i) + " ";
         addChoice (p + "Wave",   n + "Wave", waves, 0);
-        addInt    (p + "Octave", n + "Octave", -2, 2, i == 1 ? 0 : 1);
+        addInt    (p + "Octave", n + "Octave", -2, 2, 0);
         addInt    (p + "Semi",   n + "Semi", -12, 12, 0);
-        addFloat  (p + "Fine",   n + "Fine", { -100.0f, 100.0f }, i == 1 ? 0.0f : 6.0f,
+        addFloat  (p + "Fine",   n + "Fine", { -100.0f, 100.0f }, 0.0f,
                    [] (float v, int) { return String (roundToInt (v)) + " ct"; });
-        addInt    (p + "Voices", n + "Voices", 1, 7, i == 1 ? 7 : 5);
-        addFloat  (p + "Detune", n + "Detune", { 0.0f, 1.0f }, i == 1 ? 0.45f : 0.3f, pct);
-        addFloat  (p + "Width",  n + "Width",  { 0.0f, 1.0f }, 1.0f, pct);
+        addInt    (p + "Voices", n + "Voices", 1, 7, 1);
+        addFloat  (p + "Detune", n + "Detune", { 0.0f, 1.0f }, 0.5f, pct);
+        addFloat  (p + "Width",  n + "Width",  { 0.0f, 1.0f }, 0.5f, pct);
         addFloat  (p + "Level",  n + "Level",  { 0.0f, 1.0f }, i == 1 ? 0.7f : 0.7f, pct);
     }
 

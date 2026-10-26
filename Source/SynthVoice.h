@@ -16,12 +16,13 @@ struct SynthSettings
 {
     OscSettings osc[2];
     bool oscOn[2] { true, true }, subOn = true, noiseOn = true, filterOn = true, lfoOn = true;
+    bool filterOsc[2] { true, true }, filterNoise = true, filterSub = false;   // filter routing
 
     int subWave = 0, subOctave = 0;
     float subLevel = 0.0f, noiseLevel = 0.0f;
 
     int filterType = 1;
-    float cutoff = 3000.0f, reso = 0.0f, envAmount = 0.0f, keyTrack = 0.0f, drive = 0.0f;
+    float cutoff = 3000.0f, reso = 0.0f, envAmount = 0.0f, keyTrack = 0.0f, drive = 0.0f, lowCut = 20.0f;
 
     juce::ADSR::Parameters filterEnv, ampEnv;
     float velSens = 0.5f;
@@ -100,6 +101,7 @@ public:
         if (! ampEnv.isActive())
         {
             for (auto& f : filters) f.reset();
+            for (auto& f : lowCutFilters) f.reset();
             // Random start phases give every note its own ensemble shimmer
             for (auto& o : phases)
                 for (auto& p : o)
@@ -193,6 +195,9 @@ public:
         const float maxCutoff = (float) sampleRate * 0.45f;
         const float k = 2.0f - 1.96f * s.reso;
         const float piOverSr = juce::MathConstants<float>::pi * invSr;
+        // Low cut (12 dB/oct high-pass) on the filtered bus only, so bypassed sources like the sub keep their lows
+        SVFCoeffs lowCutC;
+        lowCutC.set (std::tan (juce::jlimit (20.0f, maxCutoff, s.lowCut) * piOverSr), 1.4142f);
         const float drivePre = 1.0f + s.drive * 5.0f;
         const float driveMakeup = 1.0f / std::sqrt (drivePre);
 
@@ -221,10 +226,12 @@ public:
             const double pitchMul = std::exp2 (lfo * vibratoSemis / 12.0f);
 
             // --- Oscillators
-            float l = 0.0f, r = 0.0f;
+            // Two buses: sources routed to the filter, and sources that bypass it
+            float l = 0.0f, r = 0.0f, dryL = 0.0f, dryR = 0.0f;
             for (int o = 0; o < 2; ++o)
             {
                 const int wave = s.osc[o].wave;
+                float ol = 0.0f, or_ = 0.0f;
                 for (int u = 0; u < numUni[o]; ++u)
                 {
                     const double dt = incs[o][u] * pitchMul;
@@ -232,9 +239,11 @@ public:
                     const float v = oscillator (wave, (float) ph, (float) dt);
                     ph += dt;
                     if (ph >= 1.0) ph -= 1.0;
-                    l += v * gainL[o][u];
-                    r += v * gainR[o][u];
+                    ol += v * gainL[o][u];
+                    or_ += v * gainR[o][u];
                 }
+                (s.filterOsc[o] ? l : dryL) += ol;
+                (s.filterOsc[o] ? r : dryR) += or_;
             }
 
             const double subDt = subInc * pitchMul;
@@ -244,8 +253,10 @@ public:
             if (subPhase >= 1.0) subPhase -= 1.0;
 
             const float noise = (random01() * 2.0f - 1.0f) * noiseGain;
-            l += sub + noise;
-            r += sub + noise;
+            (s.filterSub ? l : dryL) += sub;
+            (s.filterSub ? r : dryR) += sub;
+            (s.filterNoise ? l : dryL) += noise;
+            (s.filterNoise ? r : dryR) += noise;
 
             // --- Filter
             const float fEnv = filterEnv.getNextSample();
@@ -270,7 +281,15 @@ public:
                 c1.set (g, k);
                 l = runFilter (s.filterType, l, c1, g, filters[0], filters[1]);
                 r = runFilter (s.filterType, r, c1, g, filters[2], filters[3]);
+
+                float lp, bp, hp;
+                lowCutFilters[0].process (l, lowCutC.a1, lowCutC.a2, lowCutC.a3, lowCutC.k, lp, bp, hp);
+                l = hp;
+                lowCutFilters[1].process (r, lowCutC.a1, lowCutC.a2, lowCutC.a3, lowCutC.k, lp, bp, hp);
+                r = hp;
             }
+            l += dryL;
+            r += dryR;
 
             // --- Amp
             const float amp = aEnv * velGain * (1.0f - s.lfoAmp * (0.5f + 0.5f * lfo)) * outputGain;
@@ -365,6 +384,7 @@ private:
     double subPhase = 0.0;
 
     SVF filters[4]; // L stage 1/2, R stage 1/2
+    SVF lowCutFilters[2];
     juce::ADSR ampEnv, filterEnv;
 
     float lfoPhase = 0.0f, lfoTime = 0.0f, shValue = 0.0f;
