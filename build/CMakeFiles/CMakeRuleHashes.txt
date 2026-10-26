@@ -1,0 +1,4 @@
+# Hashes of file build rules.
+a54f4d1a5efacd099e64c8eb37e80cd1 VelvetPad_artefacts/JuceLibraryCode/VelvetPad_AU/PkgInfo
+83eeba030441b666c9932c0c2e2d0e3e VelvetPad_artefacts/JuceLibraryCode/VelvetPad_Standalone/PkgInfo
+4bbcdfe9f055c07f4924f92f2f86a154 VelvetPad_artefacts/JuceLibraryCode/VelvetPad_VST3/PkgInfo
