@@ -33,7 +33,8 @@ VelvetPadProcessor::VelvetPadProcessor()
     p.filterOn = get ("filterOn");    p.lfoOn = get ("lfoOn");
     p.lowCut = get ("lowCut");        p.drive = get ("drive");
     p.filterA = get ("filterA");      p.filterB = get ("filterB");
-    p.filterN = get ("filterN");      p.filterS = get ("filterS");        p.pumpOn = get ("pumpOn");    p.pumpRate = get ("pumpRate");
+    p.filterN = get ("filterN");      p.filterS = get ("filterS");
+    p.wheelCutoff = get ("wheelCutoff"); p.wheelVibrato = get ("wheelVibrato");        p.pumpOn = get ("pumpOn");    p.pumpRate = get ("pumpRate");
     p.pumpShape = get ("pumpShape");  p.pumpDepth = get ("pumpDepth");
 }
 
@@ -108,6 +109,10 @@ void VelvetPadProcessor::updateSettings()
     settings.filterOsc[1] = p.filterB->load() > 0.5f;
     settings.filterNoise  = p.filterN->load() > 0.5f;
     settings.filterSub    = p.filterS->load() > 0.5f;
+
+    settings.modWheel     = modWheel.load();
+    settings.wheelCutoff  = p.wheelCutoff->load();
+    settings.wheelVibrato = p.wheelVibrato->load();
 }
 
 void VelvetPadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -132,7 +137,16 @@ void VelvetPadProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     masterGain.setTargetValue (juce::Decibels::decibelsToGain (p.master->load()));
     masterGain.applyGain (buffer, buffer.getNumSamples());
+    protectOutput (buffer);
     scope.push (buffer);
+
+    // Master meters: keep the highest peak until the editor collects it
+    for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+    {
+        const float peak = buffer.getMagnitude (ch, 0, buffer.getNumSamples());
+        float prev = outputPeak[ch].load();
+        while (peak > prev && ! outputPeak[ch].compare_exchange_weak (prev, peak)) {}
+    }
 }
 
 void VelvetPadProcessor::applyPump (juce::AudioBuffer<float>& buffer)
@@ -172,6 +186,42 @@ void VelvetPadProcessor::applyPump (juce::AudioBuffer<float>& buffer)
             buffer.getWritePointer (ch)[i] *= pumpGain;
 
         pumpBeats += beatsPerSample;
+    }
+}
+
+void VelvetPadProcessor::protectOutput (juce::AudioBuffer<float>& buffer)
+{
+    const int n = buffer.getNumSamples();
+    const int numCh = juce::jmin (2, buffer.getNumChannels());
+
+    // 1. If anything upstream produced NaN/Inf, output silence and reset every state that could hold it
+    for (int ch = 0; ch < numCh; ++ch)
+    {
+        const auto* x = buffer.getReadPointer (ch);
+        for (int i = 0; i < n; ++i)
+            if (! std::isfinite (x[i]))
+            {
+                buffer.clear();
+                fx.reset();
+                synth.allNotesOff (0, false);
+                limiterGain = 1.0f;
+                return;
+            }
+    }
+
+    // 2. Peak limiter at -0.3 dBFS: instant attack, 80 ms release. Inaudible at normal levels,
+    //    but nothing (a huge resonance, extreme FX settings) can ever blast the speakers.
+    constexpr float ceiling = 0.966f;
+    const float release = 1.0f - std::exp (-1.0f / (0.08f * (float) currentSampleRate));
+    auto* l = buffer.getWritePointer (0);
+    auto* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
+    for (int i = 0; i < n; ++i)
+    {
+        const float peak = juce::jmax (std::abs (l[i]), r != nullptr ? std::abs (r[i]) : 0.0f);
+        const float target = peak > ceiling ? ceiling / peak : 1.0f;
+        limiterGain = target < limiterGain ? target : limiterGain + (target - limiterGain) * release;
+        l[i] *= limiterGain;
+        if (r != nullptr) r[i] *= limiterGain;
     }
 }
 

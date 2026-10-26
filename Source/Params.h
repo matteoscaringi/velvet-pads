@@ -104,6 +104,10 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     addFloat  ("lfoCutoff", "LFO > Cutoff", { 0.0f, 1.0f }, 0.15f, pct);
     addFloat  ("lfoAmp",    "LFO > Amp", { 0.0f, 1.0f }, 0.0f, pct);
 
+    // Mod wheel destinations
+    addFloat ("wheelCutoff",  "Mod Wheel > Cutoff", { 0.0f, 1.0f }, 0.5f, pct);
+    addFloat ("wheelVibrato", "Mod Wheel > Vibrato", { 0.0f, 1.0f }, 0.3f, pct);
+
     // Tempo-synced volume movement: classic sidechain duck, or a gate that accents each step
     addChoice ("pumpRate",  "Pump Rate", { "1/4", "1/8", "1/16" }, 2);
     addChoice ("pumpShape", "Pump Shape", { "Sidechain", "Gate" }, 1);
@@ -112,24 +116,33 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     auto ms = [] (float v, int) { return String (roundToInt (v)) + " ms"; };
     auto db = [] (float v, int) { return String (v, 1) + " dB"; };
 
-    addChoice ("distType",  "Distortion Type", { "Soft", "Hard", "Tube", "Fold", "Crush" }, 0);
-    addFloat  ("distDrive", "Distortion Drive", { 0.0f, 1.0f }, 0.3f, pct);
-    addFloat  ("distTone",  "Distortion Tone", { 0.0f, 1.0f }, 0.7f, pct);
-    addFloat  ("distMix",   "Distortion Mix", { 0.0f, 1.0f }, 1.0f, pct);
+    // Distortion: shaper with an optional filter before (Pre) or after (Post) it
+    addChoice ("distType",       "Distortion Type", { "Soft", "Hard", "Tube", "Fold", "Crush" }, 0);
+    addFloat  ("distDrive",      "Distortion Drive", { 0.0f, 1.0f }, 0.3f, pct);
+    addChoice ("distFilterMode", "Distortion Filter", { "Off", "Pre", "Post" }, 0);
+    addChoice ("distFilterType", "Distortion Filter Type", { "LP", "BP", "HP" }, 0);
+    addFloat  ("distFilterFreq", "Distortion Filter Freq", skewed (20.0f, 20000.0f, 1000.0f), 2000.0f, hz);
+    addFloat  ("distFilterQ",    "Distortion Filter Q", skewed (0.5f, 10.0f, 2.0f), 0.7f,
+               [] (float v, int) { return String (v, 1); });
+    addFloat  ("distMix",        "Distortion Mix", { 0.0f, 1.0f }, 1.0f, pct);
 
     addFloat ("phaserRate",     "Phaser Rate", skewed (0.02f, 10.0f, 1.0f), 0.3f, hz);
     addFloat ("phaserDepth",    "Phaser Depth", { 0.0f, 1.0f }, 0.5f, pct);
+    addFloat ("phaserFreq",     "Phaser Frequency", skewed (100.0f, 8000.0f, 1300.0f), 1300.0f, hz);
     addFloat ("phaserFeedback", "Phaser Feedback", { 0.0f, 0.9f }, 0.3f, pct);
     addFloat ("phaserMix",      "Phaser Mix", { 0.0f, 1.0f }, 0.5f, pct);
 
-    addFloat ("chorusRate",  "Chorus Rate", skewed (0.05f, 5.0f, 0.8f), 0.45f, hz);
-    addFloat ("chorusDepth", "Chorus Depth", { 0.0f, 1.0f }, 0.4f, pct);
-    addFloat ("chorusMix",   "Chorus Mix", { 0.0f, 1.0f }, 0.52f, pct);
+    addFloat ("chorusRate",     "Chorus Rate", skewed (0.05f, 5.0f, 0.8f), 0.45f, hz);
+    addFloat ("chorusDepth",    "Chorus Depth", { 0.0f, 1.0f }, 0.4f, pct);
+    addFloat ("chorusDelay",    "Chorus Delay", { 1.0f, 30.0f }, 7.0f, ms);
+    addFloat ("chorusFeedback", "Chorus Feedback", { -0.9f, 0.9f }, 0.0f, pct);
+    addFloat ("chorusMix",      "Chorus Mix", { 0.0f, 1.0f }, 0.52f, pct);
 
     addChoice ("delaySync",     "Delay Time", { "1/16", "1/8", "1/8 D", "1/4", "1/4 D", "1/2" }, 2);
     addChoice ("delayMode",     "Delay Mode", { "Stereo", "Ping-Pong" }, 1);
     addFloat  ("delayFeedback", "Delay Feedback", { 0.0f, 0.95f }, 0.35f, pct);
-    addFloat  ("delayTone",     "Delay Tone", { 0.0f, 1.0f }, 0.5f, pct);
+    addFloat  ("delayLowCut",   "Delay Low Cut", skewed (20.0f, 2000.0f, 200.0f), 150.0f, hz);
+    addFloat  ("delayHighCut",  "Delay High Cut", skewed (1000.0f, 20000.0f, 6000.0f), 6000.0f, hz);
     addFloat  ("delayMix",      "Delay Mix", { 0.0f, 1.0f }, 0.25f, pct);
 
     addFloat ("compThreshold", "Comp Threshold", { -48.0f, 0.0f }, -18.0f, db);
@@ -137,18 +150,28 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
               [] (float v, int) { return String (v, 1) + ":1"; });
     addFloat ("compAttack",    "Comp Attack", skewed (0.1f, 100.0f, 10.0f), 10.0f, ms);
     addFloat ("compRelease",   "Comp Release", skewed (10.0f, 1000.0f, 150.0f), 120.0f, ms);
-    addFloat ("compGain",      "Comp Gain", { 0.0f, 24.0f }, 6.0f, db);
+    addFloat ("compGain",      "Comp Gain", { 0.0f, 12.0f }, 6.0f, db);
+    addFloat ("compMix",       "Comp Mix", { 0.0f, 1.0f }, 1.0f, pct);
 
-    addFloat ("reverbSize",  "Reverb Size", { 0.0f, 1.0f }, 0.8f, pct);
-    addFloat ("reverbDamp",  "Reverb Damping", { 0.0f, 1.0f }, 0.45f, pct);
-    addFloat ("reverbWidth", "Reverb Width", { 0.0f, 1.0f }, 1.0f, pct);
-    addFloat ("reverbMix",   "Reverb Mix", { 0.0f, 1.0f }, 0.3f, pct);
+    // Reverb: 8-line feedback delay network
+    addChoice ("reverbMode",     "Reverb Mode", { "Hall", "Plate", "Room" }, 0);
+    addFloat  ("reverbPreDelay", "Reverb Pre-Delay", { 0.0f, 250.0f }, 20.0f, ms);
+    addFloat  ("reverbSize",     "Reverb Size", { 0.0f, 1.0f }, 0.8f, pct);
+    addFloat  ("reverbDecay",    "Reverb Decay", skewed (0.2f, 20.0f, 3.0f), 3.5f,
+               [] (float v, int) { return String (v, 1) + " s"; });
+    addFloat  ("reverbLowCut",   "Reverb Low Cut", skewed (20.0f, 1000.0f, 200.0f), 200.0f, hz);
+    addFloat  ("reverbHighCut",  "Reverb High Cut", skewed (1000.0f, 20000.0f, 6000.0f), 7000.0f, hz);
+    addFloat  ("reverbSpin",     "Reverb Spin", skewed (0.05f, 5.0f, 0.8f), 0.6f, hz);
+    addFloat  ("reverbSpinDepth","Reverb Spin Depth", { 0.0f, 1.0f }, 0.4f, pct);
+    addFloat  ("reverbWidth",    "Reverb Width", { 0.0f, 1.0f }, 1.0f, pct);
+    addFloat  ("reverbMix",      "Reverb Mix", { 0.0f, 1.0f }, 0.3f, pct);
 
     addFloat ("eqLow",     "EQ Low", { -12.0f, 12.0f }, 0.0f, db);
     addFloat ("eqMid",     "EQ Mid", { -12.0f, 12.0f }, 0.0f, db);
     addFloat ("eqMidFreq", "EQ Mid Freq", skewed (200.0f, 8000.0f, 1200.0f), 1000.0f, hz);
+    addFloat ("eqMidQ",    "EQ Mid Q", skewed (0.3f, 6.0f, 1.0f), 1.0f, [] (float v, int) { return String (v, 2); });
     addFloat ("eqHigh",    "EQ High", { -12.0f, 12.0f }, 0.0f, db);
-    addFloat ("master",     "Master", { -36.0f, 6.0f }, -3.0f,
+    addFloat ("master",     "Master", { -36.0f, 6.0f }, -6.0f,
               [] (float v, int) { return String (v, 1) + " dB"; });
 
     return layout;

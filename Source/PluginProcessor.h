@@ -39,13 +39,16 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState; // on-screen keyboard in the editor
+    std::atomic<float> modWheel { 0.0f };  // 0..1, from MIDI CC1 or the on-screen wheel
     VoiceMonitor monitor;                  // playhead state for the env/LFO graphs
     ScopeFifo scope;                       // final output for the VIS tab
+    std::atomic<float> outputPeak[2] {};   // highest output sample since the meter last read it
 
 private:
     void updateSettings();
     void applyPump (juce::AudioBuffer<float>&);
     void publishMonitor();
+    void protectOutput (juce::AudioBuffer<float>&);
 
     // Raw parameter pointers, cached once so the audio thread never does string lookups
     struct ParamPtrs
@@ -58,13 +61,13 @@ private:
                            *lfoShape, *lfoRate, *lfoDelay, *lfoPitch, *lfoCutoff, *lfoAmp,
                            *master,
                            *osc1On, *osc2On, *subOn, *noiseOn, *filterOn, *lfoOn,
-                           *lowCut, *drive, *filterA, *filterB, *filterN, *filterS, *pumpOn, *pumpRate, *pumpShape, *pumpDepth;
+                           *lowCut, *drive, *filterA, *filterB, *filterN, *filterS, *wheelCutoff, *wheelVibrato, *pumpOn, *pumpRate, *pumpShape, *pumpDepth;
     } p;
 
     static constexpr int numVoices = 16;
 
     SynthSettings settings;
-    StringSynth synth { settings };
+    StringSynth synth { settings, modWheel };
 
     FxChain fx { apvts };
     juce::SmoothedValue<float> masterGain;
@@ -73,6 +76,7 @@ private:
     double currentSampleRate = 44100.0;
     double pumpBeats = 0.0;     // free-running beat position when the host isn't playing
     float pumpGain = 1.0f;      // smoothed so step edges never click
+    float limiterGain = 1.0f;   // output safety limiter
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VelvetPadProcessor)
 };

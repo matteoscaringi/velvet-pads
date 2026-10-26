@@ -49,11 +49,18 @@ void fillUnder (juce::Graphics& g, const juce::Path& curve, juce::Rectangle<floa
 void GraphBase::drawBackground (juce::Graphics& g, int verticalLines, int horizontalLines)
 {
     const auto b = getLocalBounds().toFloat();
-    g.setColour (Theme::graphBg);
-    g.fillRoundedRectangle (b, 1.5f);
+    g.setGradientFill (juce::ColourGradient (Theme::graphBg.brighter (0.06f), 0.0f, b.getY(), Theme::graphBg, 0.0f, b.getBottom(), false));
+    g.fillRect (b);
 
+    // Fine minor grid, then the major divisions
     const auto p = plot();
-    g.setColour (Theme::graphGrid);
+    g.setColour (accent.withAlpha (0.035f));
+    for (float x = p.getX(); x < p.getRight(); x += 10.0f)
+        g.drawVerticalLine (juce::roundToInt (x), p.getY(), p.getBottom());
+    for (float y = p.getY(); y < p.getBottom(); y += 10.0f)
+        g.drawHorizontalLine (juce::roundToInt (y), p.getX(), p.getRight());
+
+    g.setColour (accent.withAlpha (0.12f));
     for (int i = 1; i < verticalLines; ++i)
     {
         const float x = p.getX() + p.getWidth() * (float) i / (float) verticalLines;
@@ -65,8 +72,8 @@ void GraphBase::drawBackground (juce::Graphics& g, int verticalLines, int horizo
         g.drawHorizontalLine (juce::roundToInt (y), p.getX(), p.getRight());
     }
 
-    g.setColour (Theme::edge);
-    g.drawRoundedRectangle (b.reduced (0.5f), 1.5f, 1.0f);
+    g.setColour (accent.withAlpha (0.25f));
+    g.drawRect (b, 1.0f);
 }
 
 void GraphBase::drawReadout (juce::Graphics& g)
@@ -178,7 +185,7 @@ void EnvelopeGraph::paint (juce::Graphics& g)
 
     fillUnder (g, curve, p, p.getBottom(), accent);
     g.setColour (accent);
-    g.strokePath (curve, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    Theme::strokeGlow (g, curve, accent, 2.0f);
 
     // Note-off marker
     g.setColour (Theme::dimText.withAlpha (0.4f));
@@ -347,7 +354,7 @@ void FilterGraph::paint (juce::Graphics& g)
 
     fillUnder (g, curve, p, p.getBottom(), accent);
     g.setColour (accent);
-    g.strokePath (curve, juce::PathStrokeType (2.0f));
+    Theme::strokeGlow (g, curve, accent, 2.0f);
 
     const float fc = cutoff.get();
     drawHandle (g, { freqToX (fc), dbToY (magnitudeDb (fc)) }, accent, isMouseButtonDown());
@@ -442,7 +449,7 @@ void OscGraph::paint (juce::Graphics& g)
     const auto main = makePath (0.0f);
     fillUnder (g, main, p, mid, accent.withAlpha (0.6f));
     g.setColour (accent);
-    g.strokePath (main, juce::PathStrokeType (2.0f));
+    Theme::strokeGlow (g, main, accent, 2.0f);
 
     g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
     g.setColour (Theme::dimText);
@@ -545,7 +552,7 @@ void LfoGraph::paint (juce::Graphics& g)
     g.fillPath (dashed);
 
     g.setColour (accent);
-    g.strokePath (curve, juce::PathStrokeType (1.8f));
+    Theme::strokeGlow (g, curve, accent, 1.8f);
 
     drawHandle (g, delayHandle(), accent, hoverHandle || draggingDelay);
 
@@ -652,7 +659,7 @@ void DistGraph::paint (juce::Graphics& g)
         else        curve.lineTo (x, y);
     }
     g.setColour (accent);
-    g.strokePath (curve, juce::PathStrokeType (2.0f));
+    Theme::strokeGlow (g, curve, accent, 2.0f);
     drawReadout (g);
 }
 
@@ -681,6 +688,7 @@ EqGraph::EqGraph (juce::AudioProcessorValueTreeState& s)
     : low (s, "eqLow", [this] { repaint(); }),
       mid (s, "eqMid", [this] { repaint(); }),
       midFreq (s, "eqMidFreq", [this] { repaint(); }),
+      midQ (s, "eqMidQ", [this] { repaint(); }),
       high (s, "eqHigh", [this] { repaint(); })
 {
     setMouseCursor (juce::MouseCursor::DraggingHandCursor);
@@ -693,7 +701,7 @@ float EqGraph::responseDb (float freq) const
     using AC = juce::dsp::IIR::ArrayCoefficients<float>;
     auto gain = [] (float db) { return juce::Decibels::decibelsToGain (db); };
     const std::array<float, 6> bands[] = { AC::makeLowShelf (sr, 200.0, 0.707f, gain (low.get())),
-                                           AC::makePeakFilter (sr, midFreq.get(), 1.0f, gain (mid.get())),
+                                           AC::makePeakFilter (sr, midFreq.get(), midQ.get(), gain (mid.get())),
                                            AC::makeHighShelf (sr, 6000.0, 0.707f, gain (high.get())) };
     const std::complex<double> z = std::polar (1.0, juce::MathConstants<double>::twoPi * freq / sr);
     double mag = 1.0;
@@ -751,7 +759,7 @@ void EqGraph::paint (juce::Graphics& g)
     g.setColour (accent.withAlpha (0.18f));
     g.fillPath (fill);
     g.setColour (accent);
-    g.strokePath (curve, juce::PathStrokeType (2.0f));
+    Theme::strokeGlow (g, curve, accent, 2.0f);
 
     drawHandle (g, { freqToX (midFreq.get()), dbToY (mid.get()) }, accent, isMouseButtonDown());
     drawReadout (g);
@@ -788,4 +796,88 @@ void EqGraph::mouseDoubleClick (const juce::MouseEvent&)
     mid.reset();
     midFreq.reset();
     high.reset();
+}
+
+//==============================================================================
+MiniFilterGraph::MiniFilterGraph (juce::AudioProcessorValueTreeState& s, const juce::String& typeId, const juce::String& freqId,
+                                  const juce::String& qId, const juce::String& enableId)
+    : type (s, typeId, [this] { repaint(); }),
+      freq (s, freqId, [this] { repaint(); }),
+      q (s, qId, [this] { repaint(); }),
+      enable (s, enableId, [this] { repaint(); })
+{
+    setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+}
+
+float MiniFilterGraph::magnitudeDb (float f) const
+{
+    const float w = f / freq.get(), w2 = w * w, k = 1.0f / q.get();
+    const float den = std::sqrt ((1.0f - w2) * (1.0f - w2) + (k * w) * (k * w));
+    const int t = (int) type.get();
+    const float mag = t == 0 ? 1.0f / den : t == 1 ? k * w / den : w2 / den;
+    return juce::Decibels::gainToDecibels (mag, -100.0f);
+}
+
+void MiniFilterGraph::paint (juce::Graphics& g)
+{
+    drawBackground (g, 1, 1);
+    const auto p = plot().withTrimmedBottom (12.0f);
+    const bool on = enable.get() > 0.5f;
+    const auto c = on ? accent : Theme::dimText.withAlpha (0.5f);
+
+    auto toX = [&] (float f) { return p.getX() + std::log (f / 20.0f) / std::log (1000.0f) * p.getWidth(); };
+    auto toY = [&] (float db) { return juce::jmap (juce::jlimit (-36.0f, 24.0f, db), -36.0f, 24.0f, p.getBottom(), p.getY()); };
+
+    juce::Path curve;
+    const int steps = juce::jmax (2, (int) p.getWidth());
+    for (int i = 0; i <= steps; ++i)
+    {
+        const float f = 20.0f * std::pow (1000.0f, (float) i / (float) steps);
+        const float x = p.getX() + p.getWidth() * (float) i / (float) steps, y = toY (magnitudeDb (f));
+        if (i == 0) curve.startNewSubPath (x, y);
+        else        curve.lineTo (x, y);
+    }
+    juce::Path fill (curve);
+    fill.lineTo (p.getRight(), p.getBottom());
+    fill.lineTo (p.getX(), p.getBottom());
+    fill.closeSubPath();
+    g.setColour (c.withAlpha (0.15f));
+    g.fillPath (fill);
+    Theme::strokeGlow (g, curve, c, 1.6f);
+    drawHandle (g, { toX (freq.get()), toY (magnitudeDb (freq.get())) }, c, isMouseButtonDown());
+
+    // Frequency / Q readout along the bottom, like hardware value fields
+    g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+    g.setColour (on ? Theme::text : Theme::dimText);
+    auto row = getLocalBounds().reduced (6, 3).removeFromBottom (12).toFloat();
+    g.drawText ("F  " + freq.text(), row, juce::Justification::centredLeft);
+    g.drawText ("Q  " + q.text(), row, juce::Justification::centredRight);
+    if (! on)
+    {
+        g.setColour (Theme::dimText);
+        g.drawText ("FILTER OFF", getLocalBounds().toFloat().withTrimmedBottom (14.0f), juce::Justification::centred);
+    }
+}
+
+void MiniFilterGraph::mouseDown (const juce::MouseEvent& e)
+{
+    dragStartQ = q.norm();
+    freq.begin();
+    q.begin();
+    mouseDrag (e);
+}
+
+void MiniFilterGraph::mouseDrag (const juce::MouseEvent& e)
+{
+    const auto p = plot();
+    freq.set (20.0f * std::pow (1000.0f, juce::jlimit (0.0f, 1.0f, (e.position.x - p.getX()) / p.getWidth())));
+    q.setNorm (dragStartQ - (float) e.getDistanceFromDragStartY() / 120.0f);
+    repaint();
+}
+
+void MiniFilterGraph::mouseUp (const juce::MouseEvent&)
+{
+    freq.end();
+    q.end();
+    repaint();
 }

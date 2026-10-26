@@ -155,6 +155,27 @@ private:
 };
 
 //==============================================================================
+// Small filter response (LP / BP / HP) for FX modules. Drag: horizontally for frequency,
+// vertically for Q. Dims when its enable choice (e.g. Off/Pre/Post) is at 0.
+class MiniFilterGraph : public GraphBase
+{
+public:
+    MiniFilterGraph (juce::AudioProcessorValueTreeState&, const juce::String& typeId, const juce::String& freqId,
+                     const juce::String& qId, const juce::String& enableChoiceId);
+
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+private:
+    float magnitudeDb (float freq) const;
+
+    ParamRef type, freq, q, enable;
+    float dragStartQ = 1.0f;
+};
+
+//==============================================================================
 // EQ response. Drag the mid point: horizontally for frequency, vertically for gain.
 class EqGraph : public GraphBase
 {
@@ -172,7 +193,7 @@ private:
     float freqToX (float f) const;
     float dbToY (float db) const;
 
-    ParamRef low, mid, midFreq, high;
+    ParamRef low, mid, midFreq, midQ, high;
 };
 
 //==============================================================================

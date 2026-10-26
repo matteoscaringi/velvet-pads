@@ -33,6 +33,7 @@ class Knob : public juce::Component
 {
 public:
     Knob (APVTS&, const juce::String& paramId, const juce::String& name);
+    void setBoxedLabel (bool b) { boxedLabel = b; repaint(); }
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -40,6 +41,7 @@ public:
 
 private:
     juce::String name;
+    bool boxedLabel = false;
     std::unique_ptr<APVTS::SliderAttachment> attachment;
 };
 
@@ -191,16 +193,36 @@ private:
 };
 
 // One effect strip in the FX rack: title tag + selectors on the left, optional graph,
-// knob row, power button on the right.
+// Vertical list of LED buttons for a choice parameter (e.g. OFF / PRE / POST, HALL / PLATE / ROOM)
+class ChoiceLeds : public juce::Component
+{
+public:
+    ChoiceLeds (APVTS&, const juce::String& paramId, juce::Colour);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    int preferredHeight() const { return names.size() * 18; }
+
+private:
+    ParamRef choice;
+    juce::StringArray names;
+    juce::Colour colour;
+};
+
+// One FX module as a rack unit: ears with bolts, coloured tag, a single row of controls,
+// Mix set apart on the right and the power button on the right ear.
 class RackStrip : public juce::Component
 {
 public:
-    RackStrip (APVTS&, const juce::String& title, juce::Colour, const juce::String& powerId,
-               std::initializer_list<std::pair<const char*, const char*>> knobs,
-               std::initializer_list<const char*> selectorIds = {},
-               std::unique_ptr<juce::Component> graph = nullptr);
+    RackStrip (APVTS&, const juce::String& title, juce::Colour, const juce::String& powerId);
 
-    int preferredHeight() const { return graph != nullptr ? 150 : 96; }
+    // Builders, in left-to-right order
+    RackStrip& selector (const char* paramId, int width = 120);
+    RackStrip& leds (const char* paramId, int width = 64);
+    RackStrip& graph (std::unique_ptr<juce::Component>, int width);
+    RackStrip& knob (const char* paramId, const char* name);
+    RackStrip& mix (const char* paramId);
+
+    static constexpr int unitHeight = 88;
     void setSelected (bool);
     std::function<void()> onSelect;
 
@@ -212,9 +234,12 @@ public:
     const juce::Colour colour;
 
 private:
-    juce::OwnedArray<Knob> knobs;
-    juce::OwnedArray<Selector> selectors;
-    std::unique_ptr<juce::Component> graph;
+    struct Item { juce::Component* component; int width; bool isKnob; };
+
+    APVTS& state;
+    std::vector<Item> items;
+    juce::OwnedArray<juce::Component> owned;
+    Knob* mixKnob = nullptr;
     juce::ToggleButton power;
     std::unique_ptr<APVTS::ButtonAttachment> powerAttachment;
     bool selected = false;
@@ -269,6 +294,47 @@ private:
 };
 
 //==============================================================================
+// On-screen mod wheel. Shows the hardware wheel (MIDI CC1) and can be dragged like one.
+class ModWheel : public juce::Component,
+                 public juce::SettableTooltipClient,
+                 private juce::Timer
+{
+public:
+    explicit ModWheel (std::atomic<float>& value);
+
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override { value = 0.0f; repaint(); }
+
+private:
+    void timerCallback() override;
+
+    std::atomic<float>& value;
+    float shown = -1.0f, dragStart = 0.0f;
+};
+
+//==============================================================================
+// Master output meters: two segmented bars (green > orange > red) with peak hold and a clip light.
+class OutputMeter : public juce::Component,
+                    public juce::SettableTooltipClient,
+                    private juce::Timer
+{
+public:
+    explicit OutputMeter (std::atomic<float>* peaks);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override { clipped[0] = clipped[1] = false; repaint(); }
+
+private:
+    void timerCallback() override;
+
+    std::atomic<float>* peaks;
+    float level[2] {}, hold[2] {};
+    int holdFrames[2] {};
+    bool clipped[2] {};
+};
+
+//==============================================================================
 class VelvetPadEditor : public juce::AudioProcessorEditor
 {
 public:
@@ -294,6 +360,9 @@ private:
     VisPage visPage;
     juce::TextButton oscTab { "OSC" }, fxTab { "FX" }, visTab { "VIS" };
     Knob master;
+    OutputMeter outputMeter;
+    ModWheel modWheel;
+    Knob wheelCutoff, wheelVibrato;
     juce::MidiKeyboardComponent keyboard;
     juce::TooltipWindow tooltips { this, 600 };
 

@@ -4,23 +4,25 @@
 
 namespace Theme
 {
-const juce::Colour background  { 0xff15181c };
-const juce::Colour panelTop    { 0xff30363d };
-const juce::Colour panelBottom { 0xff252a30 };
-const juce::Colour headerTop   { 0xff434c56 };
-const juce::Colour headerBot   { 0xff353c45 };
-const juce::Colour edge        { 0xff0b0d10 };
-const juce::Colour graphBg     { 0xff0c1014 };
-const juce::Colour graphGrid   { 0xff1b232b };
-const juce::Colour field       { 0xff15191d };
-const juce::Colour track       { 0xff14171b };
-const juce::Colour text        { 0xffdfe6ee };
-const juce::Colour dimText     { 0xff8d98a4 };
+// Deep blue-black HUD palette with a cyan accent
+const juce::Colour background  { 0xff070a0f };
+const juce::Colour panelTop    { 0xff131a23 };
+const juce::Colour panelBottom { 0xff0d1219 };
+const juce::Colour headerTop   { 0xff19222d };
+const juce::Colour headerBot   { 0xff121921 };
+const juce::Colour edge        { 0xff03050a };
+const juce::Colour graphBg     { 0xff05080c };
+const juce::Colour graphGrid   { 0xff12202b };
+const juce::Colour field       { 0xff080c12 };
+const juce::Colour track       { 0xff18212b };
+const juce::Colour text        { 0xffe4f1ff };
+const juce::Colour dimText     { 0xff71849a };
 
-const juce::Colour accent      { 0xff3ea6ff };   // blue: knobs, envelopes, filter
-const juce::Colour wave        { 0xffa6e34b };   // lime: oscillator displays
-const juce::Colour lfo         { 0xffb38cff };   // violet: LFO
-const juce::Colour gold        { 0xffe6b86a };   // title
+const juce::Colour accent      { 0xff2fd6ff };   // cyan: global accent
+const juce::Colour accent2     { 0xffff4fd8 };   // magenta: title gradient
+const juce::Colour wave        { 0xffa6e34b };
+const juce::Colour lfo         { 0xffb38cff };
+const juce::Colour gold        { 0xffe6b86a };
 } // namespace Theme
 
 // Every FX module has its own colour, used for its LED, tag, power button, knobs and graph
@@ -50,25 +52,32 @@ const juce::Colour eq         { 0xffc6e04a };
 
 namespace Theme
 {
-// Subtle brushed-metal grain: horizontal streaks plus fine noise, tiled over surfaces
-inline const juce::Image& brushedTexture()
+// Condensed sans for the HUD look (falls back to the system font if missing)
+inline juce::Font font (float size, bool bold = false)
+{
+    return juce::Font (juce::FontOptions ("Avenir Next Condensed", size, bold ? juce::Font::bold : juce::Font::plain))
+               .withExtraKerningFactor (0.04f);
+}
+
+// Fine tech grid with a little noise, tiled over surfaces
+inline const juce::Image& surfaceTexture()
 {
     static const juce::Image image = []
     {
-        constexpr int size = 256;
+        constexpr int size = 192;
         juce::Image im (juce::Image::ARGB, size, size, true);
         juce::Random rng (0x5eed);
         juce::Image::BitmapData px (im, juce::Image::BitmapData::writeOnly);
         for (int y = 0; y < size; ++y)
-        {
-            const float streak = rng.nextFloat() * 2.0f - 1.0f;
             for (int x = 0; x < size; ++x)
             {
-                const float n = 0.65f * streak + 0.35f * (rng.nextFloat() * 2.0f - 1.0f);
-                const auto alpha = (juce::uint8) juce::jlimit (0, 255, (int) (std::abs (n) * 30.0f));
-                px.setPixelColour (x, y, (n > 0.0f ? juce::Colours::white : juce::Colours::black).withAlpha (alpha));
+                const bool grid = (x % 12 == 0) || (y % 12 == 0);
+                const bool scan = (y % 3 == 0);
+                const float noise = rng.nextFloat();
+                const float a = (grid ? 0.05f : 0.0f) + (scan ? 0.025f : 0.0f) + noise * 0.035f;
+                const auto c = grid ? juce::Colour (0xff6fd8ff) : (noise > 0.5f ? juce::Colours::white : juce::Colours::black);
+                px.setPixelColour (x, y, c.withAlpha (a));
             }
-        }
         return im;
     }();
     return image;
@@ -78,26 +87,73 @@ inline void drawTexture (juce::Graphics& g, juce::Rectangle<float> area, float o
 {
     juce::Graphics::ScopedSaveState state (g);
     g.reduceClipRegion (area.getSmallestIntegerContainer());
-    g.setTiledImageFill (brushedTexture(), 0, 0, opacity);
+    g.setTiledImageFill (surfaceTexture(), 0, 0, opacity);
     g.fillRect (area);
 }
 
-// Bevelled panel body with a title strip, shared by every section on every tab
-inline void drawPanelFrame (juce::Graphics& g, juce::Rectangle<float> b, float headerHeight)
+// Rectangle with the top-left and bottom-right corners cut off
+inline juce::Path chamfered (juce::Rectangle<float> r, float cut)
 {
+    juce::Path p;
+    p.startNewSubPath (r.getX() + cut, r.getY());
+    p.lineTo (r.getRight(), r.getY());
+    p.lineTo (r.getRight(), r.getBottom() - cut);
+    p.lineTo (r.getRight() - cut, r.getBottom());
+    p.lineTo (r.getX(), r.getBottom());
+    p.lineTo (r.getX(), r.getY() + cut);
+    p.closeSubPath();
+    return p;
+}
+
+// Neon line: wide faint passes underneath, sharp line on top
+inline void strokeGlow (juce::Graphics& g, const juce::Path& path, juce::Colour c, float width)
+{
+    g.setColour (c.withAlpha (0.10f));
+    g.strokePath (path, juce::PathStrokeType (width * 4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour (c.withAlpha (0.22f));
+    g.strokePath (path, juce::PathStrokeType (width * 2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour (c);
+    g.strokePath (path, juce::PathStrokeType (width, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
+// HUD panel: chamfered body, grid texture, header strip with a glowing rule, corner brackets
+inline void drawPanelFrame (juce::Graphics& g, juce::Rectangle<float> b, float headerHeight, juce::Colour c = accent)
+{
+    constexpr float cut = 10.0f;
+    const auto body = chamfered (b.reduced (0.5f), cut);
+
     g.setGradientFill (juce::ColourGradient (panelTop, 0.0f, b.getY(), panelBottom, 0.0f, b.getBottom(), false));
-    g.fillRoundedRectangle (b, 1.5f);
-    drawTexture (g, b.reduced (1.0f));
+    g.fillPath (body);
+    {
+        juce::Graphics::ScopedSaveState state (g);
+        g.reduceClipRegion (body);
+        drawTexture (g, b);
 
-    const auto h = b.withHeight (headerHeight).reduced (1.0f, 1.0f);
-    g.setGradientFill (juce::ColourGradient (headerTop, 0.0f, h.getY(), headerBot, 0.0f, h.getBottom(), false));
-    g.fillRoundedRectangle (h, 1.5f);
-    drawTexture (g, h, 0.8f);
+        if (headerHeight > 0.0f)
+        {
+            const auto h = b.withHeight (headerHeight);
+            g.setGradientFill (juce::ColourGradient (headerTop, 0.0f, h.getY(), headerBot, 0.0f, h.getBottom(), false));
+            g.fillRect (h);
+            g.setGradientFill (juce::ColourGradient (c.withAlpha (0.10f), h.getX(), 0.0f, juce::Colours::transparentBlack, h.getRight(), 0.0f, false));
+            g.fillRect (h);
+            // Glowing rule under the header, fading out to the right
+            g.setGradientFill (juce::ColourGradient (c.withAlpha (0.8f), h.getX(), 0.0f, c.withAlpha (0.05f), h.getRight(), 0.0f, false));
+            g.fillRect (h.getX(), h.getBottom() - 1.0f, h.getWidth(), 1.0f);
+        }
+    }
 
-    // Bevel: light top edge, dark bottom edge
-    g.setColour (juce::Colours::white.withAlpha (0.07f));
-    g.drawHorizontalLine ((int) b.getY() + 1, b.getX() + 1.0f, b.getRight() - 1.0f);
-    g.setColour (edge);
-    g.drawRoundedRectangle (b.reduced (0.5f), 1.5f, 1.0f);
+    g.setColour (c.withAlpha (0.18f));
+    g.strokePath (body, juce::PathStrokeType (1.0f));
+
+    // Corner brackets on the two square corners
+    juce::Path brackets;
+    constexpr float len = 12.0f;
+    brackets.startNewSubPath (b.getRight() - len, b.getY() + 0.5f);
+    brackets.lineTo (b.getRight() - 0.5f, b.getY() + 0.5f);
+    brackets.lineTo (b.getRight() - 0.5f, b.getY() + len);
+    brackets.startNewSubPath (b.getX() + 0.5f, b.getBottom() - len);
+    brackets.lineTo (b.getX() + 0.5f, b.getBottom() - 0.5f);
+    brackets.lineTo (b.getX() + len, b.getBottom() - 0.5f);
+    strokeGlow (g, brackets, c.withAlpha (0.85f), 1.2f);
 }
 } // namespace Theme

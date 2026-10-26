@@ -32,6 +32,7 @@ struct SynthSettings
 
     // Performance controllers, written by the synth from MIDI
     float modWheel = 0.0f, pitchBendSemis = 0.0f;
+    float wheelCutoff = 0.5f, wheelVibrato = 0.3f;   // mod wheel destination amounts
 };
 
 //==============================================================================
@@ -102,10 +103,14 @@ public:
         {
             for (auto& f : filters) f.reset();
             for (auto& f : lowCutFilters) f.reset();
-            // Random start phases give every note its own ensemble shimmer
-            for (auto& o : phases)
-                for (auto& p : o)
-                    p = random01();
+            // Unison stacks start at random phases for ensemble shimmer; a single-voice
+            // oscillator always starts at 0 so A and B sum the same way on every note
+            for (int o = 0; o < 2; ++o)
+            {
+                const bool single = settings.osc[o].voices <= 1;
+                for (auto& p : phases[o])
+                    p = single ? 0.0 : (double) random01();
+            }
             subPhase = 0.0;
         }
 
@@ -190,7 +195,12 @@ public:
 
         const float velGain = 1.0f - s.velSens * (1.0f - velocity);
         const float lfoInc = s.lfoRate * invSr;
-        const float vibratoSemis = s.lfoPitch + s.modWheel * 0.6f;
+        const float vibratoSemis = s.lfoPitch;
+
+        // Mod wheel: opens the filter and adds its own vibrato (independent of the LFO)
+        const float wheelCutoffOct = s.modWheel * s.wheelCutoff * 4.0f;
+        const float wheelVibSemis = s.modWheel * s.wheelVibrato * 0.5f;
+        const float wheelVibInc = 5.5f * invSr;
         const float keyTrackOct = s.keyTrack * (float) (noteNumber - 60) / 12.0f;
         const float maxCutoff = (float) sampleRate * 0.45f;
         const float k = 2.0f - 1.96f * s.reso;
@@ -223,7 +233,10 @@ public:
                 releaseTime += invSr;
             lastLfo = lfo;
 
-            const double pitchMul = std::exp2 (lfo * vibratoSemis / 12.0f);
+            const float wheelVib = wheelVibSemis > 0.0f ? std::sin (juce::MathConstants<float>::twoPi * wheelVibPhase) * wheelVibSemis : 0.0f;
+            wheelVibPhase += wheelVibInc;
+            if (wheelVibPhase >= 1.0f) wheelVibPhase -= 1.0f;
+            const double pitchMul = std::exp2 ((lfo * vibratoSemis + wheelVib) / 12.0f);
 
             // --- Oscillators
             // Two buses: sources routed to the filter, and sources that bypass it
@@ -236,9 +249,11 @@ public:
                 {
                     const double dt = incs[o][u] * pitchMul;
                     double& ph = phases[o][u];
-                    const float v = oscillator (wave, (float) ph, (float) dt);
+                    // Above ~Nyquist an oscillator can't be represented: keep it silent. (Before this
+                    // check, a phase step > 1 never wrapped and the saw output grew without limit.)
+                    const float v = dt < maxPhaseStep ? oscillator (wave, (float) ph, (float) dt) : 0.0f;
                     ph += dt;
-                    if (ph >= 1.0) ph -= 1.0;
+                    ph -= std::floor (ph);
                     ol += v * gainL[o][u];
                     or_ += v * gainR[o][u];
                 }
@@ -247,10 +262,10 @@ public:
             }
 
             const double subDt = subInc * pitchMul;
-            const float sub = (s.subWave == 0 ? oscillator (3, (float) subPhase, (float) subDt)
+            const float sub = subDt >= maxPhaseStep ? 0.0f : (s.subWave == 0 ? oscillator (3, (float) subPhase, (float) subDt)
                                               : oscillator (1, (float) subPhase, (float) subDt)) * subGain;
             subPhase += subDt;
-            if (subPhase >= 1.0) subPhase -= 1.0;
+            subPhase -= std::floor (subPhase);
 
             const float noise = (random01() * 2.0f - 1.0f) * noiseGain;
             (s.filterSub ? l : dryL) += sub;
@@ -264,7 +279,7 @@ public:
             lastFilterEnv = fEnv;
             lastAmpEnv = aEnv;
 
-            const float octaves = s.envAmount * fEnv * 6.0f + lfo * s.lfoCutoff * 3.0f + keyTrackOct;
+            const float octaves = s.envAmount * fEnv * 6.0f + lfo * s.lfoCutoff * 3.0f + keyTrackOct + wheelCutoffOct;
             const float fc = juce::jlimit (20.0f, maxCutoff, s.cutoff * std::exp2 (octaves));
             const float g = std::tan (fc * piOverSr);
 
@@ -307,6 +322,7 @@ public:
 
 private:
     static constexpr int maxUnison = 7;
+    static constexpr double maxPhaseStep = 0.45;   // oscillators above 0.45 x sample rate are muted
     static constexpr float outputGain = 0.22f;
 
     static inline float polyBlep (float t, float dt) noexcept
@@ -387,7 +403,7 @@ private:
     SVF lowCutFilters[2];
     juce::ADSR ampEnv, filterEnv;
 
-    float lfoPhase = 0.0f, lfoTime = 0.0f, shValue = 0.0f;
+    float lfoPhase = 0.0f, lfoTime = 0.0f, shValue = 0.0f, wheelVibPhase = 0.0f;
     uint32_t rng = 1;
 
     float releaseTime = -1.0f, lastAmpEnv = 0.0f, lastFilterEnv = 0.0f, lastLfo = 0.0f;
@@ -400,12 +416,12 @@ private:
 class StringSynth : public juce::Synthesiser
 {
 public:
-    explicit StringSynth (SynthSettings& s) : settings (s) {}
+    StringSynth (SynthSettings& s, std::atomic<float>& wheel) : settings (s), modWheel (wheel) {}
 
     void handleController (int channel, int number, int value) override
     {
         if (number == 1)
-            settings.modWheel = (float) value / 127.0f;
+            modWheel = (float) value / 127.0f;   // hardware wheel; the on-screen wheel shows and edits the same value
         juce::Synthesiser::handleController (channel, number, value);
     }
 
@@ -417,4 +433,5 @@ public:
 
 private:
     SynthSettings& settings;
+    std::atomic<float>& modWheel;
 };
